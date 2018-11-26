@@ -1,0 +1,10 @@
+[Unit]
+Description=Blacklisting of AS
+After=syslog.target network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/blacklist-as -r
+
+[Install]
+WantedBy=multi-user.target
