@@ -1,12 +1,13 @@
 #!/bin/sh
 PREFIX=/usr/local/bin
-SYSTEMS=($(grep -vE '^#|^\s*$' $PREFIX/as_blacklist.conf))
+ipv4_file=$PREFIX/as_tables_ipv4
+ipv6_file=$PREFIX/as_tables_ipv6
+conf_file=$PREFIX/as_blacklist.conf
+SYSTEMS=($(sed -r "s/$(grep -Eo "#.*" $conf_file | tr '\n' '|')//g" $conf_file | grep -vE '^\s*$'))
 UPDATE=0
 CLEAN=0
 INSTALL=0
 RESTORE=0
-ipv4_file=$PREFIX/as_tables_ipv4
-ipv6_file=$PREFIX/as_tables_ipv6
 HEADER="*filter
 :INPUT DROP [0:0]
 :FORWARD DROP [0:0]
