@@ -1,6 +1,6 @@
 #!/bin/sh
 PREFIX=/usr/local/bin
-SYSTEMS=($(grep -v '^#' $PREFIX/as_blacklist.conf))
+SYSTEMS=($(grep -vE '^#|^\s*$' $PREFIX/as_blacklist.conf))
 UPDATE=0
 CLEAN=0
 INSTALL=0
