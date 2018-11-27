@@ -1,13 +1,9 @@
-#!/bin/sh
+#!/bin/bash
 PREFIX=/usr/local/bin
 ipv4_file=$PREFIX/as_tables_ipv4
 ipv6_file=$PREFIX/as_tables_ipv6
 conf_file=$PREFIX/as_blacklist.conf
 SYSTEMS=($(sed -r "s/$(grep -Eo "#.*" $conf_file | tr '\n' '|')//g" $conf_file | grep -vE '^\s*$'))
-UPDATE=0
-CLEAN=0
-INSTALL=0
-RESTORE=0
 HEADER="*filter
 :INPUT DROP [0:0]
 :FORWARD DROP [0:0]
@@ -19,6 +15,7 @@ ENDING="-A INPUT -i lo -j ACCEPT
 COMMIT"
 
 set -e
+set -o nounset
 
 create_tables() {
 	echo "$HEADER" > $ipv4_file
@@ -88,22 +85,26 @@ install_service(){
 }
 
 usage() {
-	echo "Usage: $0 -u -c -i -r"
-	echo "-u update"
-	echo "-c clean"
-	echo "-i install service"
-	echo "-r restore iptables"
-	echo "-h show this help"
-	echo "Max 1 of the operations"
+	echo "Usage:"
+	echo " $0 option"
+	echo ""
+	echo "Block autonomous systems using iptables"
+	echo ""
+	echo "Options:"
+	echo " -u, --update"
+	echo " -c, --clean"
+	echo " -i, --install-service"
+	echo " -r, --restore"
+	echo " -h, --help"
+	echo " -d, --dropped-packets"
 }
 
 crash() {
-	echo $1
-	clean
+	echo $1 1>&2
 	exit 1
 }
 
-restore(){
+restore() {
 	if [ ! -f $ipv4_file ] || [ ! -f $ipv6_file ]; then
 		crash "Cannot restore because iptables files do not exist"
 	fi
@@ -111,64 +112,71 @@ restore(){
 	ip6tables-restore < $ipv6_file
 }
 
+show_dropped_packets() {
+ iptables -L -nv | awk '{if(($1!="Chain"&&$1!="pkts"&&$3=="DROP"&&($1!=0||$2!=0))||NR==2){print}}'
+ ip6tables -L -nv | awk '{if($1!="Chain"&&$1!="pkts"&&$3=="DROP"&&($1!=0||$2!=0)){print}}'
+}
+
 if [ "$(id -u)" != "0" ]; then
-   echo "This script must be run as root" 1>&2
-   exit 1
+   	crash "This script must be run as root"
 fi
 
 if ! type iptables > /dev/null || ! type ip6tables > /dev/null; then
-	echo "Command iptables not found"
+	crash "Command iptables not found"
 fi
 
-while getopts "ucirh" options; do
-	case "${options}" in
-		u)
-			UPDATE=1	
-			;;
-		c)
-			CLEAN=1
-			;;
-		i)	
-			INSTALL=1
-			;;
-		r)
-			RESTORE=1
-			;;
-		h)
+TMP=$(getopt -o 'ucirhd' -l 'update,clean,install-service,restore,help,dropped-packets' -n "$0" -- "$@")
+
+if [ $? -ne 0 ]; then
+	crash "Error with getopt"
+fi
+
+eval set -- "$TMP"
+unset TMP
+
+while true; do
+	case "$1" in
+		'-u'|'--update')
+			echo "Updating configuration"
+			clean
+			create_tables 
+			restore
+			exit 
+		;;
+		'-c'|'--clean')
+			echo "Cleaning IP-Tables and removing temporary files"
+			clean
+			exit
+		;;
+		'-i'|'--install-service')
+			echo "Installing service file for automatic setup of iptables"
+			install_service
+			exit
+		;;
+		'-r'|'--restore')	
+			echo "called restore"
+			restore
+			exit
+		;;
+		'-h'|'--help')
 			usage
 			exit
-			;;
+		;;
+		'-d'|'--dropped-packets')
+			show_dropped_packets
+			exit
+		;;
+		'--')
+			usage
+			echo ""
+			crash "No options supplied"
+			exit
+		;;
 		*)
-			crash "Unknown argument"
-			;;
+			usage
+			echo ""
+			crash "Unknown option"
+		;;
+
 	esac
 done
-
-if [ $((UPDATE + CLEAN + INSTALL + RESTORE)) -gt 1 ]; then
-	crash "Too many options supplied."
-fi
-
-if [ $((UPDATE + CLEAN + INSTALL + RESTORE)) -eq 0 ]; then
-	usage
-	crash "No options supplied."
-fi
-
-if [ $UPDATE -eq 1 ]; then
-	echo "Updating configuration"
-	clean
-	create_tables 
-	restore
-	exit
-elif [ $CLEAN -eq 1 ]; then
-	echo "Cleaning IP-Tables and removing temporary files"
-	clean
-	exit
-elif [ $RESTORE -eq 1 ]; then
-	echo "called restore"
-	restore
-	exit
-else
-	echo "Installing service file for automatic setup of iptables"
-	install_service
-	exit
-fi
