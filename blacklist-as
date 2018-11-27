@@ -31,6 +31,11 @@ create_tables() {
 		local ALL_TMP=$(whois -h whois.radb.net -i origin $CURR_SYS)
 		local TMP4=($(echo "$ALL_TMP" | grep "route:" | awk '{print $2}'))
 		local TMP6=($(echo "$ALL_TMP" | grep "route6:" | awk '{print $2}'))
+		
+		if [ "${#TMP4[@]}" -eq "0" ] && [ "${#TMP6[@]}" -eq "0" ]; then
+			echo "Current AS not found in whois database"
+			continue
+		fi
 
 		for ipv4_addr in "${TMP4[@]}"; do 
 			echo "-A INPUT -s $ipv4_addr -j DROP" >> $ipv4_file
