@@ -18,24 +18,27 @@ set -e
 set -o nounset
 
 create_tables() {
+	local COUNTER=0
+	local NO_ELEMS=${#SYSTEMS[@]}
 	echo "$HEADER" > $ipv4_file
 	echo "$HEADER" > $ipv6_file
 
-	for curr_sys in "${SYSTEMS[@]}"
+	for CURR_SYS in "${SYSTEMS[@]}"
 	do
-		local ALL_TMP=$(whois -h whois.radb.net -i origin $curr_sys)
+		COUNTER=$((COUNTER + 1))
+
+		printf "%-30s %s\n" "Procesing AS ${CURR_SYS}" "${COUNTER}/${NO_ELEMS}"
+		local ALL_TMP=$(whois -h whois.radb.net -i origin $CURR_SYS)
 		local TMP4=($(echo "$ALL_TMP" | grep "route:" | awk '{print $2}'))
 		local TMP6=($(echo "$ALL_TMP" | grep "route6:" | awk '{print $2}'))
 
-		for ipv4_addr in "${TMP4[@]}"; do
-			echo "Blacklisting IPV4 $ipv4_addr from $curr_sys" 
+		for ipv4_addr in "${TMP4[@]}"; do 
 			echo "-A INPUT -s $ipv4_addr -j DROP" >> $ipv4_file
 			echo "-A FORWARD -s $ipv4_addr -j DROP" >> $ipv4_file
 			echo "-A OUTPUT -s $ipv4_addr -j DROP" >> $ipv4_file
 		done
 
 		for ipv6_addr in "${TMP6[@]}"; do
-			echo "Blacklisting IPV6 $ipv6_addr from $curr_sys"
 			echo "-A INPUT -s $ipv6_addr -j DROP" >> $ipv6_file
 			echo "-A FORWARD -s $ipv6_addr -j DROP" >> $ipv6_file
 			echo "-A OUTPUT -s $ipv6_addr -j DROP" >> $ipv6_file
@@ -43,7 +46,13 @@ create_tables() {
 	done	
 	
 	echo "$ENDING" >> $ipv4_file
-	echo "$ENDING" >> $ipv6_file 
+	echo "$ENDING" >> $ipv6_file
+
+	echo "Compressing iptables"
+	xz -z $ipv4_file
+
+	echo "Compressing ip6tables"
+	xz -z $ipv6_file	
 }
 
 clean() {
@@ -58,12 +67,12 @@ clean() {
 	ip6tables -P OUTPUT ACCEPT
 	ip6tables -P FORWARD ACCEPT
 
-	if [ -f $ipv4_file ]; then
-    		rm $PREFIX/as_tables_ipv4
+	if [ -f ${ipv4_file}.xz ]; then
+    		rm ${ipv4_file}.xz
 	fi
 
-	if [ -f $ipv6_file ]; then
-		rm $PREFIX/as_tables_ipv6
+	if [ -f ${ipv6_file}.xz ]; then
+		rm ${ipv6_file}.xz
 	fi
 
 	if [ -f /usr/lib/systemd/system/blacklist-as-unit.service ]; then
@@ -76,6 +85,7 @@ install_service(){
 	if [ ! -f $PREFIX/blacklist-as-unit.service ]; then
 		crash "Missing file blacklist-as-unit.service, check your installation"
 	fi
+
 	if [ ! -d /usr/lib/systemd/system ]; then
 		crash "This script is not compatible with your distribution"
 	fi
@@ -105,11 +115,11 @@ crash() {
 }
 
 restore() {
-	if [ ! -f $ipv4_file ] || [ ! -f $ipv6_file ]; then
+	if [ ! -f ${ipv4_file}.xz ] || [ ! -f ${ipv6_file}.xz ]; then
 		crash "Cannot restore because iptables files do not exist"
 	fi
-	iptables-restore < $ipv4_file
-	ip6tables-restore < $ipv6_file
+	xz -d --stdout ${ipv4_file}.xz | iptables-restore
+	xz -d --stdout ${ipv6_file}.xz | ip6tables-restore
 }
 
 show_dropped_packets() {
@@ -123,6 +133,14 @@ fi
 
 if ! type iptables > /dev/null || ! type ip6tables > /dev/null; then
 	crash "Command iptables not found"
+fi
+
+if ! type xz > /dev/null; then
+	crash "Command xz not found"
+fi
+
+if ! type systemctl > /dev/null; then
+	crash "Command systemctl not found"
 fi
 
 TMP=$(getopt -o 'ucirhd' -l 'update,clean,install-service,restore,help,dropped-packets' -n "$0" -- "$@")
