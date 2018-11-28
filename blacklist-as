@@ -148,6 +148,10 @@ if ! type systemctl > /dev/null; then
 	crash "Command systemctl not found"
 fi
 
+if ! type whois > /dev/null; then
+	crash "Command whois not found"
+fi
+
 TMP=$(getopt -o 'ucirhd' -l 'update,clean,install-service,restore,help,dropped-packets' -n "$0" -- "$@")
 
 if [ $? -ne 0 ]; then
